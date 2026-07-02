@@ -8,6 +8,65 @@
 
 **CosyVoice 1.0**: [Demos](https://fun-audio-llm.github.io); [Paper](https://funaudiollm.github.io/pdf/CosyVoice_v1.pdf); [Modelscope](https://www.modelscope.cn/models/iic/CosyVoice-300M); [HuggingFace](https://huggingface.co/FunAudioLLM/CosyVoice-300M)
 
+## 🍎 Apple Silicon (MPS) Support
+
+**This is a fork of [FunAudioLLM/CosyVoice](https://github.com/FunAudioLLM/CosyVoice) that adds first-class support for running on Apple Silicon (M1/M2/M3/M4) via PyTorch's MPS backend — no CUDA GPU required.** Device selection, autocast, and memory management throughout the codebase now recognize `mps` alongside `cuda`/`cpu`.
+
+### Quick start
+
+1. **Clone**
+    ```sh
+    git clone --recursive https://github.com/ZoneTwelve/CosyVoice-MPS.git
+    cd CosyVoice-MPS
+    # if the submodule failed to clone, run:
+    git submodule update --init --recursive
+    ```
+
+2. **Create an environment** — PyTorch ships MPS support out of the box on macOS, no extra install needed
+    ```sh
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt
+    ```
+
+3. **Download a model** — `Fun-CosyVoice3-0.5B` is recommended (see [Model download](#model-download) below for other models)
+    ```python
+    # modelscope SDK
+    from modelscope import snapshot_download
+    snapshot_download('FunAudioLLM/Fun-CosyVoice3-0.5B-2512', local_dir='pretrained_models/Fun-CosyVoice3-0.5B')
+
+    # or, for oversea users, huggingface SDK
+    from huggingface_hub import snapshot_download
+    snapshot_download('FunAudioLLM/Fun-CosyVoice3-0.5B-2512', local_dir='pretrained_models/Fun-CosyVoice3-0.5B')
+    ```
+
+4. **Run it** — `AutoModel` auto-detects MPS, no code changes needed versus CUDA
+    ```sh
+    python tts.py "Hello, this is a test." -o hello.wav
+    ```
+
+    Or drive the API directly, same as `example.py`:
+    ```python
+    from cosyvoice.cli.cosyvoice import AutoModel
+    cosyvoice = AutoModel(model_dir='pretrained_models/Fun-CosyVoice3-0.5B')
+    # cosyvoice.model.device resolves to torch.device('mps') automatically
+    ```
+
+See **[MPS_USAGE.md](./MPS_USAGE.md)** for voice cloning with your own reference audio, a translate-and-dub example pipeline, and troubleshooting.
+
+### Known limitations on MPS
+
+| Feature | Status |
+|---|---|
+| Core inference (LLM + flow + HiFT) | ✅ Runs on `mps` |
+| `fp16` autocast | ✅ Supported |
+| `load_jit` / `load_trt` / `load_vllm` | ❌ CUDA/TensorRT only — auto-disabled when no CUDA device is found |
+| CampPlus / speech-tokenizer ONNX sessions | ⚠️ Always run on CPU — ONNX Runtime has no MPS execution provider |
+| Causal HiFT generator's f0 predictor | ⚠️ Falls back to float32 (Metal has no float64 support) |
+| Real-time factor | Expect RTF > 1 with float32 on MPS — this is a hardware limitation, not a bug |
+
+The sections below are the original upstream documentation (Linux/CUDA-oriented); they still apply if you're running on a CUDA GPU instead of Apple Silicon.
+
 ## Highlight🔥
 
 **Fun-CosyVoice 3.0** is an advanced text-to-speech (TTS) system based on large language models (LLM), surpassing its predecessor (CosyVoice 2.0) in content consistency, speaker similarity, and prosody naturalness. It is designed for zero-shot multilingual speech synthesis in the wild.
@@ -83,6 +142,8 @@
 
 ## Install
 
+> On Apple Silicon? Use the [MPS quick start](#-apple-silicon-mps-support) above instead — this section targets Linux/CUDA.
+
 ### Clone and install
 
 - Clone the repo
@@ -151,13 +212,7 @@ Follow the code in `example.py` for detailed usage of each model.
 python example.py
 ```
 
-#### Apple Silicon (MPS) Usage
-
-This fork runs on Apple Silicon via PyTorch's MPS backend (no CUDA required).
-See [MPS_USAGE.md](./MPS_USAGE.md) for setup notes, a minimal `tts.py` CLI, and
-a translate-and-dub example pipeline.
-
-#### vLLM Usage
+#### vLLM Usage (CUDA only)
 CosyVoice2/3 now supports **vLLM 0.11.x+ (V1 engine)** and **vLLM 0.9.0 (legacy)**.
 Older vllm version(<0.9.0) do not support CosyVoice inference, and versions in between (e.g., 0.10.x) are not tested.
 
@@ -188,7 +243,7 @@ python3 webui.py --port 50000 --model_dir pretrained_models/CosyVoice-300M
 
 For advanced users, we have provided training and inference scripts in `examples/libritts`.
 
-#### Build for deployment
+#### Build for deployment (CUDA only)
 
 Optionally, if you want service deployment,
 You can run the following steps.
@@ -205,7 +260,7 @@ docker run -d --runtime=nvidia -p 50000:50000 cosyvoice:v1.0 /bin/bash -c "cd /o
 cd fastapi && python3 client.py --port 50000 --mode <sft|zero_shot|cross_lingual|instruct>
 ```
 
-#### Using Nvidia TensorRT-LLM for deployment
+#### Using Nvidia TensorRT-LLM for deployment (CUDA only)
 
 Using TensorRT-LLM to accelerate cosyvoice2 llm could give 4x acceleration comparing with huggingface transformers implementation.
 To quick start:
