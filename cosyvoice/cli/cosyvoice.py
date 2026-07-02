@@ -44,9 +44,12 @@ class CosyVoice:
                                           '{}/spk2info.pt'.format(model_dir),
                                           configs['allowed_special'])
         self.sample_rate = configs['sample_rate']
-        if torch.cuda.is_available() is False and (load_jit is True or load_trt is True or fp16 is True):
-            load_jit, load_trt, fp16 = False, False, False
-            logging.warning('no cuda device, set load_jit/load_trt/fp16 to False')
+        if torch.cuda.is_available() is False and (load_jit is True or load_trt is True):
+            load_jit, load_trt = False, False
+            logging.warning('no cuda device, set load_jit/load_trt to False')
+        if not torch.cuda.is_available() and not torch.backends.mps.is_available() and fp16 is True:
+            fp16 = False
+            logging.warning('no gpu device, set fp16 to False')
         self.model = CosyVoiceModel(configs['llm'], configs['flow'], configs['hift'], fp16)
         self.model.load('{}/llm.pt'.format(model_dir),
                         '{}/flow.pt'.format(model_dir),
@@ -156,9 +159,12 @@ class CosyVoice2(CosyVoice):
                                           '{}/spk2info.pt'.format(model_dir),
                                           configs['allowed_special'])
         self.sample_rate = configs['sample_rate']
-        if torch.cuda.is_available() is False and (load_jit is True or load_trt is True or load_vllm is True or fp16 is True):
-            load_jit, load_trt, load_vllm, fp16 = False, False, False, False
-            logging.warning('no cuda device, set load_jit/load_trt/load_vllm/fp16 to False')
+        if torch.cuda.is_available() is False and (load_jit is True or load_trt is True or load_vllm is True):
+            load_jit, load_trt, load_vllm = False, False, False
+            logging.warning('no cuda device, set load_jit/load_trt/load_vllm to False')
+        if not torch.cuda.is_available() and not torch.backends.mps.is_available() and fp16 is True:
+            fp16 = False
+            logging.warning('no gpu device, set fp16 to False')
         self.model = CosyVoice2Model(configs['llm'], configs['flow'], configs['hift'], fp16)
         self.model.load('{}/llm.pt'.format(model_dir),
                         '{}/flow.pt'.format(model_dir),
@@ -206,9 +212,12 @@ class CosyVoice3(CosyVoice2):
                                           '{}/spk2info.pt'.format(model_dir),
                                           configs['allowed_special'])
         self.sample_rate = configs['sample_rate']
-        if torch.cuda.is_available() is False and (load_trt is True or fp16 is True):
-            load_trt, fp16 = False, False
-            logging.warning('no cuda device, set load_trt/fp16 to False')
+        if torch.cuda.is_available() is False and load_trt is True:
+            load_trt = False
+            logging.warning('no cuda device, set load_trt to False')
+        if not torch.cuda.is_available() and not torch.backends.mps.is_available() and fp16 is True:
+            fp16 = False
+            logging.warning('no gpu device, set fp16 to False')
         self.model = CosyVoice3Model(configs['llm'], configs['flow'], configs['hift'], fp16)
         self.model.load('{}/llm.pt'.format(model_dir),
                         '{}/flow.pt'.format(model_dir),

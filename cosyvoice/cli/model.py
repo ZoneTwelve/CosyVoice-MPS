@@ -26,6 +26,28 @@ from cosyvoice.utils.file_utils import convert_onnx_to_trt, export_cosyvoice2_vl
 from cosyvoice.utils.common import TrtContextWrapper
 
 
+def _get_device():
+    if torch.cuda.is_available():
+        return torch.device('cuda')
+    elif torch.backends.mps.is_available():
+        return torch.device('mps')
+    return torch.device('cpu')
+
+
+def _get_autocast(device_type: str, fp16: bool):
+    if fp16:
+        return torch.amp.autocast(device_type=device_type, dtype=torch.float16)
+    return nullcontext()
+
+
+def _release_device_memory(device: torch.device):
+    if device.type == 'cuda':
+        torch.cuda.empty_cache()
+        torch.cuda.current_stream().synchronize()
+    elif device.type == 'mps':
+        torch.mps.empty_cache()
+
+
 class CosyVoiceModel:
 
     def __init__(self,
@@ -33,7 +55,7 @@ class CosyVoiceModel:
                  flow: torch.nn.Module,
                  hift: torch.nn.Module,
                  fp16: bool = False):
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = _get_device()
         self.llm = llm
         self.flow = flow
         self.hift = hift
@@ -52,7 +74,7 @@ class CosyVoiceModel:
         # rtf and decoding related
         self.stream_scale_factor = 1
         assert self.stream_scale_factor >= 1, 'stream_scale_factor should be greater than 1, change it according to your actual rtf'
-        self.llm_context = torch.cuda.stream(torch.cuda.Stream(self.device)) if torch.cuda.is_available() else nullcontext()
+        self.llm_context = torch.cuda.stream(torch.cuda.Stream(self.device)) if self.device.type == 'cuda' else nullcontext()
         self.lock = threading.Lock()
         # dict used to store session related variable
         self.tts_speech_token_dict = {}
@@ -100,7 +122,7 @@ class CosyVoiceModel:
 
     def llm_job(self, text, prompt_text, llm_prompt_speech_token, llm_embedding, uuid):
         cur_silent_token_num, max_silent_token_num = 0, 5
-        with self.llm_context, torch.cuda.amp.autocast(self.fp16 is True and hasattr(self.llm, 'vllm') is False):
+        with self.llm_context, _get_autocast(self.device.type, self.fp16 is True and hasattr(self.llm, 'vllm') is False):
             if isinstance(text, Generator):
                 assert (self.__class__.__name__ != 'CosyVoiceModel') and not hasattr(self.llm, 'vllm'), 'streaming input text is only implemented for CosyVoice2/3 and do not support vllm!'
                 token_generator = self.llm.inference_bistream(text=text,
@@ -133,7 +155,7 @@ class CosyVoiceModel:
         self.llm_end_dict[uuid] = True
 
     def token2wav(self, token, prompt_token, prompt_feat, embedding, uuid, finalize=False, speed=1.0):
-        with torch.cuda.amp.autocast(self.fp16):
+        with _get_autocast(self.device.type, self.fp16):
             tts_mel, self.flow_cache_dict[uuid] = self.flow.inference(token=token.to(self.device, dtype=torch.int32),
                                                                       token_len=torch.tensor([token.shape[1]], dtype=torch.int32).to(self.device),
                                                                       prompt_token=prompt_token.to(self.device),
@@ -237,9 +259,7 @@ class CosyVoiceModel:
             self.mel_overlap_dict.pop(this_uuid)
             self.hift_cache_dict.pop(this_uuid)
             self.flow_cache_dict.pop(this_uuid)
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.current_stream().synchronize()
+        _release_device_memory(self.device)
 
 
 class CosyVoice2Model(CosyVoiceModel):
@@ -249,7 +269,7 @@ class CosyVoice2Model(CosyVoiceModel):
                  flow: torch.nn.Module,
                  hift: torch.nn.Module,
                  fp16: bool = False):
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = _get_device()
         self.llm = llm
         self.flow = flow
         self.hift = hift
@@ -266,7 +286,7 @@ class CosyVoice2Model(CosyVoiceModel):
         # speech fade in out
         self.speech_window = np.hamming(2 * self.source_cache_len)
         # rtf and decoding related
-        self.llm_context = torch.cuda.stream(torch.cuda.Stream(self.device)) if torch.cuda.is_available() else nullcontext()
+        self.llm_context = torch.cuda.stream(torch.cuda.Stream(self.device)) if self.device.type == 'cuda' else nullcontext()
         self.lock = threading.Lock()
         # dict used to store session related variable
         self.tts_speech_token_dict = {}
@@ -290,7 +310,7 @@ class CosyVoice2Model(CosyVoiceModel):
         del self.llm.llm.model.model.layers
 
     def token2wav(self, token, prompt_token, prompt_feat, embedding, token_offset, uuid, stream=False, finalize=False, speed=1.0):
-        with torch.cuda.amp.autocast(self.fp16):
+        with _get_autocast(self.device.type, self.fp16):
             tts_mel, _ = self.flow.inference(token=token.to(self.device, dtype=torch.int32),
                                              token_len=torch.tensor([token.shape[1]], dtype=torch.int32).to(self.device),
                                              prompt_token=prompt_token.to(self.device),
@@ -389,9 +409,7 @@ class CosyVoice2Model(CosyVoiceModel):
             self.tts_speech_token_dict.pop(this_uuid)
             self.llm_end_dict.pop(this_uuid)
             self.hift_cache_dict.pop(this_uuid)
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.current_stream().synchronize()
+        _release_device_memory(self.device)
 
 
 class CosyVoice3Model(CosyVoice2Model):
@@ -401,7 +419,7 @@ class CosyVoice3Model(CosyVoice2Model):
                  flow: torch.nn.Module,
                  hift: torch.nn.Module,
                  fp16: bool = False):
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = _get_device()
         self.llm = llm
         self.flow = flow
         self.hift = hift
@@ -413,7 +431,7 @@ class CosyVoice3Model(CosyVoice2Model):
         self.stream_scale_factor = 2
         assert self.stream_scale_factor >= 1, 'stream_scale_factor should be greater than 1, change it according to your actual rtf'
         # rtf and decoding related
-        self.llm_context = torch.cuda.stream(torch.cuda.Stream(self.device)) if torch.cuda.is_available() else nullcontext()
+        self.llm_context = torch.cuda.stream(torch.cuda.Stream(self.device)) if self.device.type == 'cuda' else nullcontext()
         self.lock = threading.Lock()
         # dict used to store session related variable
         self.tts_speech_token_dict = {}
@@ -423,7 +441,7 @@ class CosyVoice3Model(CosyVoice2Model):
         self.silent_tokens = [1, 2, 28, 29, 55, 248, 494, 2241, 2242, 2322, 2323]
 
     def token2wav(self, token, prompt_token, prompt_feat, embedding, token_offset, uuid, stream=False, finalize=False, speed=1.0):
-        with torch.cuda.amp.autocast(self.fp16):
+        with _get_autocast(self.device.type, self.fp16):
             tts_mel, _ = self.flow.inference(token=token.to(self.device, dtype=torch.int32),
                                              token_len=torch.tensor([token.shape[1]], dtype=torch.int32).to(self.device),
                                              prompt_token=prompt_token.to(self.device),

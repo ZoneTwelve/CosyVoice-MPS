@@ -151,6 +151,12 @@ Follow the code in `example.py` for detailed usage of each model.
 python example.py
 ```
 
+#### Apple Silicon (MPS) Usage
+
+This fork runs on Apple Silicon via PyTorch's MPS backend (no CUDA required).
+See [MPS_USAGE.md](./MPS_USAGE.md) for setup notes, a minimal `tts.py` CLI, and
+a translate-and-dub example pipeline.
+
 #### vLLM Usage
 CosyVoice2/3 now supports **vLLM 0.11.x+ (V1 engine)** and **vLLM 0.9.0 (legacy)**.
 Older vllm version(<0.9.0) do not support CosyVoice inference, and versions in between (e.g., 0.10.x) are not tested.

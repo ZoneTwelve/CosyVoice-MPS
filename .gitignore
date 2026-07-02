@@ -50,3 +50,14 @@ pretrained_models/*
 *_pb2_grpc.py
 *_pb2.py
 *.tar
+
+# generated/working media and scratch files (dubbing, TTS output, etc.)
+*.mp4
+*.MP4
+*.mov
+*.MOV
+/files/
+/output.wav
+/*_dubbed.*
+/*_audio*.wav
+/img0172_en.txt
